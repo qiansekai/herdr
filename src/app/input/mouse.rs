@@ -4822,13 +4822,25 @@ mod tests {
         let agent_area = app.state.agent_panel_rect();
         assert_ne!(agent_area, Rect::default());
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollDown, agent_area.x + 1, agent_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            agent_area.x + 1,
+            agent_area.y + 2,
+        ));
         assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(second));
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollDown, agent_area.x + 1, agent_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            agent_area.x + 1,
+            agent_area.y + 2,
+        ));
         assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(root));
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollUp, agent_area.x + 1, agent_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollUp,
+            agent_area.x + 1,
+            agent_area.y + 2,
+        ));
         assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(second));
     }
 
@@ -4844,13 +4856,25 @@ mod tests {
         let ws_area = app.state.workspace_list_rect();
         assert_ne!(ws_area, Rect::default());
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollDown, ws_area.x + 1, ws_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            ws_area.x + 1,
+            ws_area.y + 2,
+        ));
         assert_eq!(app.state.active, Some(1));
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollDown, ws_area.x + 1, ws_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            ws_area.x + 1,
+            ws_area.y + 2,
+        ));
         assert_eq!(app.state.active, Some(0)); // cycles back around
 
-        app.handle_mouse(mouse(MouseEventKind::ScrollUp, ws_area.x + 1, ws_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollUp,
+            ws_area.x + 1,
+            ws_area.y + 2,
+        ));
         assert_eq!(app.state.active, Some(1));
     }
 
@@ -4867,7 +4891,11 @@ mod tests {
         let ws_area = app.state.workspace_list_rect();
 
         // Scroll mode only moves the highlight; it never switches the active workspace.
-        app.handle_mouse(mouse(MouseEventKind::ScrollDown, ws_area.x + 1, ws_area.y + 2));
+        app.handle_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            ws_area.x + 1,
+            ws_area.y + 2,
+        ));
         assert_eq!(app.state.active, Some(0));
     }
 }
