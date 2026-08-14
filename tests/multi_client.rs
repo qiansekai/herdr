@@ -108,7 +108,7 @@ fn spawn_server(config_home: &Path, runtime_dir: &Path, api_socket_path: &Path) 
     register_runtime_dir(runtime_dir);
     fs::write(
         config_home.join("herdr/config.toml"),
-        "onboarding = false\n\n[ui.sidebar]\nwheel = \"scroll\"\n",
+        "onboarding = false\n",
     )
     .unwrap();
 
