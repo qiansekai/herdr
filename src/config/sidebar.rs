@@ -433,15 +433,6 @@ pub enum SidebarWheelConfig {
     Scroll,
 }
 
-impl SidebarWheelConfig {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Switch => "switch",
-            Self::Scroll => "scroll",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SidebarConfig {

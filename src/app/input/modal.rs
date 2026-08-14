@@ -2321,7 +2321,7 @@ mod tests {
 
     #[test]
     fn context_menu_pane_menu_lists_paste_first() {
-        let mut app = app_with_test_workspaces(&["main"]);
+        let app = app_with_test_workspaces(&["main"]);
         let pane_id = app.state.workspaces[0].tabs[0].root_pane;
         let menu = ContextMenuState {
             kind: ContextMenuKind::Pane {
