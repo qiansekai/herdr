@@ -1882,7 +1882,41 @@ pub fn write_clipboard(bytes: &[u8]) -> bool {
 }
 
 pub fn read_clipboard_text() -> Option<String> {
-    None
+    const MAX_CLIPBOARD_TEXT_BYTES: usize = 1024 * 1024;
+
+    unsafe {
+        let owner = GetConsoleWindow();
+        if owner.is_null() || OpenClipboard(owner) == 0 {
+            return None;
+        }
+        let _clipboard = ClipboardGuard;
+
+        let handle = GetClipboardData(CF_UNICODETEXT as u32);
+        if handle.is_null() {
+            return None;
+        }
+
+        let locked = GlobalLock(handle);
+        if locked.is_null() {
+            return None;
+        }
+
+        let block_words = GlobalSize(handle) as usize / 2;
+        let max_words = MAX_CLIPBOARD_TEXT_BYTES / 2;
+        let words = std::slice::from_raw_parts(locked.cast::<u16>(), block_words);
+        let len = match words
+            .iter()
+            .take(max_words)
+            .position(|&code_unit| code_unit == 0)
+        {
+            Some(idx) => idx,
+            None => block_words.min(max_words),
+        };
+        let text = String::from_utf16(&words[..len]).ok();
+
+        GlobalUnlock(handle);
+        text.filter(|text| !text.is_empty())
+    }
 }
 
 pub fn open_url(url: &str) -> std::io::Result<()> {

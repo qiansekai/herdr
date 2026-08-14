@@ -843,6 +843,21 @@ pub(super) fn apply_context_menu_action(
                 };
             }
         }
+        (
+            ContextMenuKind::Pane {
+                ws_idx, pane_id, ..
+            },
+            Some("Paste"),
+        ) => {
+            if let Some(text) = crate::platform::read_clipboard_text() {
+                if let Some(runtime) =
+                    state.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, pane_id)
+                {
+                    let _ = runtime.try_send_paste(text);
+                }
+            }
+            leave_modal(state);
+        }
         (ContextMenuKind::Pane { pane_id, .. }, Some("Rename pane")) => {
             open_rename_pane(state, pane_id);
         }
@@ -1265,6 +1280,23 @@ impl App {
                 if !self.close_active_tab_via_api_requires_confirmation() {
                     leave_modal(&mut self.state);
                 }
+            }
+            (
+                ContextMenuKind::Pane {
+                    ws_idx, pane_id, ..
+                },
+                Some("Paste"),
+            ) => {
+                if let Some(text) = crate::platform::read_clipboard_text() {
+                    if let Some(runtime) = self.state.runtime_for_pane_in_workspace(
+                        &self.terminal_runtimes,
+                        ws_idx,
+                        pane_id,
+                    ) {
+                        let _ = runtime.try_send_paste(text);
+                    }
+                }
+                leave_modal(&mut self.state);
             }
             (ContextMenuKind::Pane { pane_id, .. }, Some("Rename pane")) => {
                 open_rename_pane(&mut self.state, pane_id);
@@ -2255,6 +2287,69 @@ mod tests {
                 .unwrap()
                 .right_click_passthrough
         );
+    }
+
+    #[test]
+    fn context_menu_pane_menu_lists_paste_first() {
+        let mut app = app_with_test_workspaces(&["main"]);
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Pane {
+                ws_idx: 0,
+                tab_idx: 0,
+                pane_id,
+                source_pane_id: None,
+                has_manual_label: false,
+                right_click_passthrough: false,
+            },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        assert_eq!(menu.items().first(), Some(&"Paste"));
+        assert!(menu.items().contains(&"Rename pane"));
+    }
+
+    #[test]
+    fn context_menu_paste_keeps_current_focus_and_closes_menu() {
+        let mut app = super::super::app_for_mouse_test();
+        let mut ws = Workspace::test_new("test");
+        let source = ws.tabs[0].root_pane;
+        let target = ws.test_split(ratatui::layout::Direction::Horizontal);
+        ws.tabs[0].layout.focus_pane(source);
+        app.state.workspaces = vec![ws];
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        app.state.mode = Mode::Terminal;
+        let (runtime, _input_rx) =
+            crate::terminal::TerminalRuntime::test_with_channel_and_scrollback_bytes(
+                80, 20, 0, b"", 4,
+            );
+        app.state.insert_test_runtime(target, runtime);
+
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Pane {
+                ws_idx: 0,
+                tab_idx: 0,
+                pane_id: target,
+                source_pane_id: Some(source),
+                has_manual_label: false,
+                right_click_passthrough: false,
+            },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        let idx = menu
+            .items()
+            .iter()
+            .position(|item| *item == "Paste")
+            .expect("paste item");
+        app.apply_context_menu_action_via_api(menu, idx);
+
+        assert_eq!(app.state.mode, Mode::Terminal);
+        assert!(app.state.context_menu.is_none());
+        assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(source));
     }
 
     #[test]
