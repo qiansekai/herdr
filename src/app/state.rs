@@ -1182,22 +1182,34 @@ pub struct ContextMenuState {
 impl ContextMenuState {
     pub fn items(&self) -> Vec<&'static str> {
         match self.kind {
-            ContextMenuKind::Workspace { .. } => vec!["Rename", "Close"],
+            ContextMenuKind::Workspace { .. } => vec!["Open folder", "Rename", "Close"],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: false,
                 ..
-            } => vec!["Rename", "Close", "New worktree", "Open worktree..."],
+            } => vec![
+                "Open folder",
+                "Rename",
+                "Close",
+                "New worktree",
+                "Open worktree...",
+            ],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: true,
                 ..
-            } => vec!["Rename", "Close", "Delete worktree checkout..."],
+            } => vec![
+                "Open folder",
+                "Rename",
+                "Close",
+                "Delete worktree checkout...",
+            ],
             ContextMenuKind::GitWorkspace {
                 is_linked_worktree: false,
                 has_worktree_children: true,
                 collapsed,
                 ..
             } => vec![
+                "Open folder",
                 "Rename",
                 "Close group",
                 "New worktree",

@@ -803,6 +803,21 @@ pub(super) fn apply_context_menu_action(
         }
         (
             ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
+            Some("Open folder"),
+        ) => {
+            let cwd = state
+                .workspaces
+                .get(ws_idx)
+                .and_then(|ws| ws.resolved_identity_cwd_from(&state.terminals, terminal_runtimes));
+            if let Some(cwd) = cwd {
+                if let Err(err) = crate::platform::open_url(&cwd.to_string_lossy()) {
+                    tracing::warn!(err = %err, ?cwd, "failed to open workspace folder");
+                }
+            }
+            leave_modal(state);
+        }
+        (
+            ContextMenuKind::Workspace { ws_idx } | ContextMenuKind::GitWorkspace { ws_idx, .. },
             Some("Rename"),
         ) => {
             open_rename_workspace(state, terminal_runtimes, ws_idx);
@@ -1243,6 +1258,21 @@ impl App {
                         self.state.collapsed_space_keys.insert(key);
                     }
                     self.state.mark_session_dirty();
+                }
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::Workspace { ws_idx }
+                | ContextMenuKind::GitWorkspace { ws_idx, .. },
+                Some("Open folder"),
+            ) => {
+                let cwd = self.state.workspaces.get(ws_idx).and_then(|ws| {
+                    ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes)
+                });
+                if let Some(cwd) = cwd {
+                    if let Err(err) = crate::platform::open_url(&cwd.to_string_lossy()) {
+                        tracing::warn!(err = %err, ?cwd, "failed to open workspace folder");
+                    }
                 }
                 leave_modal(&mut self.state);
             }
@@ -2350,6 +2380,52 @@ mod tests {
         assert_eq!(app.state.mode, Mode::Terminal);
         assert!(app.state.context_menu.is_none());
         assert_eq!(app.state.workspaces[0].focused_pane_id(), Some(source));
+    }
+
+    #[test]
+    fn context_menu_workspace_and_git_workspace_list_open_folder_first() {
+        let ws_menu = ContextMenuState {
+            kind: ContextMenuKind::Workspace { ws_idx: 0 },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        assert_eq!(ws_menu.items().first(), Some(&"Open folder"));
+        assert!(ws_menu.items().contains(&"Rename"));
+
+        let git_menu = ContextMenuState {
+            kind: ContextMenuKind::GitWorkspace {
+                ws_idx: 0,
+                is_linked_worktree: false,
+                has_worktree_children: false,
+                collapsed: false,
+            },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        assert_eq!(git_menu.items().first(), Some(&"Open folder"));
+        assert!(git_menu.items().contains(&"Rename"));
+    }
+
+    #[test]
+    fn context_menu_open_folder_keeps_safe_when_cwd_unavailable() {
+        let mut app = app_with_test_workspaces(&["main"]);
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Workspace { ws_idx: 99 },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        let idx = menu
+            .items()
+            .iter()
+            .position(|item| *item == "Open folder")
+            .expect("open folder item");
+        app.apply_context_menu_action_via_api(menu, idx);
+
+        assert_eq!(app.state.mode, Mode::Terminal);
+        assert!(app.state.context_menu.is_none());
     }
 
     #[test]
