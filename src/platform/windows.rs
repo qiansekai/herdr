@@ -1919,6 +1919,20 @@ pub fn read_clipboard_text() -> Option<String> {
     }
 }
 
+/// Open a directory in the system file manager.
+///
+/// `explorer.exe` is used instead of `ShellExecuteW` because the latter opens
+/// the window without focusing it when called from a background process.
+pub fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    Ok(())
+}
+
 pub fn open_url(url: &str) -> std::io::Result<()> {
     let operation = wide_null("open");
     let url = wide_null(url);

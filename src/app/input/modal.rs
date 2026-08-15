@@ -1270,7 +1270,7 @@ impl App {
                     ws.resolved_identity_cwd_from(&self.state.terminals, &self.terminal_runtimes)
                 });
                 if let Some(cwd) = cwd {
-                    if let Err(err) = crate::platform::open_url(&cwd.to_string_lossy()) {
+                    if let Err(err) = crate::platform::open_directory(&cwd) {
                         tracing::warn!(err = %err, ?cwd, "failed to open workspace folder");
                     }
                 }

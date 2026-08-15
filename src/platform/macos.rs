@@ -518,6 +518,16 @@ pub fn read_clipboard_text() -> Option<String> {
     }
 }
 
+pub fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    Command::new("open")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    Ok(())
+}
+
 pub fn open_url(url: &str) -> std::io::Result<()> {
     Command::new("open")
         .arg(url)
