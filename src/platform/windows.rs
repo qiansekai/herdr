@@ -1886,18 +1886,24 @@ pub fn read_clipboard_text() -> Option<String> {
 
     unsafe {
         let owner = GetConsoleWindow();
-        if owner.is_null() || OpenClipboard(owner) == 0 {
+        if OpenClipboard(owner) == 0 {
+            tracing::warn!(
+                owner_null = owner.is_null(),
+                "read_clipboard_text: OpenClipboard failed"
+            );
             return None;
         }
         let _clipboard = ClipboardGuard;
 
         let handle = GetClipboardData(CF_UNICODETEXT as u32);
         if handle.is_null() {
+            tracing::warn!("read_clipboard_text: no CF_UNICODETEXT data");
             return None;
         }
 
         let locked = GlobalLock(handle);
         if locked.is_null() {
+            tracing::warn!("read_clipboard_text: GlobalLock failed");
             return None;
         }
 
