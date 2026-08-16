@@ -1317,33 +1317,14 @@ impl App {
                 },
                 Some("Paste"),
             ) => {
-                match crate::platform::read_clipboard_text() {
-                    Some(text) => {
-                        tracing::info!(
-                            ws_idx,
-                            pane = pane_id.raw(),
-                            chars = text.chars().count(),
-                            "paste: clipboard read ok"
-                        );
-                        match self.state.runtime_for_pane_in_workspace(
-                            &self.terminal_runtimes,
-                            ws_idx,
-                            pane_id,
-                        ) {
-                            Some(runtime) => {
-                                if let Err(err) = runtime.try_send_paste(text) {
-                                    tracing::warn!(err = %err, "paste: try_send_paste failed");
-                                } else {
-                                    tracing::info!(pane = pane_id.raw(), "paste: sent to pane");
-                                }
-                            }
-                            None => tracing::warn!(
-                                pane = pane_id.raw(),
-                                "paste: pane runtime not found"
-                            ),
-                        }
+                if let Some(text) = crate::platform::read_clipboard_text() {
+                    if let Some(runtime) = self.state.runtime_for_pane_in_workspace(
+                        &self.terminal_runtimes,
+                        ws_idx,
+                        pane_id,
+                    ) {
+                        let _ = runtime.try_send_paste(text);
                     }
-                    None => tracing::warn!("paste: clipboard read returned None"),
                 }
                 leave_modal(&mut self.state);
             }
