@@ -15,6 +15,12 @@ use std::{
 
 mod clipboard_image;
 
+pub(crate) fn set_default_plugin_pane_pwd(
+    _env: &mut Vec<(String, String)>,
+    _cwd: &std::path::Path,
+) {
+}
+
 use windows_sys::{
     Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation},
     Win32::{
@@ -360,6 +366,10 @@ static FOREGROUND_SELECTION_CACHE: LazyLock<Mutex<ForegroundSelectionCache>> =
 
 pub(crate) fn should_draw_host_cursor_by_default() -> bool {
     true
+}
+
+pub(crate) fn should_query_host_terminal_palette() -> bool {
+    false
 }
 
 /// The machine's node name, as shown by tmux's `#h`.
@@ -1939,7 +1949,7 @@ pub fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn open_url(url: &str) -> std::io::Result<()> {
+pub fn open_url(url: &str) -> std::io::Result<Option<std::process::Child>> {
     let operation = wide_null("open");
     let url = wide_null(url);
     let result = unsafe {
@@ -1953,7 +1963,7 @@ pub fn open_url(url: &str) -> std::io::Result<()> {
         )
     };
     if result as isize > 32 {
-        Ok(())
+        Ok(None)
     } else {
         Err(std::io::Error::other(format!(
             "failed to open URL with ShellExecuteW: code {}",
