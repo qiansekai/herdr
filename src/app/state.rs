@@ -1331,7 +1331,7 @@ impl ContextMenuState {
                 right_click_passthrough,
                 ..
             } => {
-                let mut items = vec!["Paste", "Rename pane"];
+                let mut items = vec!["Paste", "Enter", "Rename pane"];
                 if has_manual_label {
                     items.push("Clear pane name");
                 }

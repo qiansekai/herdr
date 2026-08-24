@@ -873,6 +873,19 @@ pub(super) fn apply_context_menu_action(
             }
             leave_modal(state);
         }
+        (
+            ContextMenuKind::Pane {
+                ws_idx, pane_id, ..
+            },
+            Some("Enter"),
+        ) => {
+            if let Some(runtime) =
+                state.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, pane_id)
+            {
+                let _ = runtime.try_send_bytes(bytes::Bytes::from_static(b"\r"));
+            }
+            leave_modal(state);
+        }
         (ContextMenuKind::Pane { pane_id, .. }, Some("Rename pane")) => {
             open_rename_pane(state, pane_id);
         }
@@ -1325,6 +1338,21 @@ impl App {
                     ) {
                         let _ = runtime.try_send_paste(text);
                     }
+                }
+                leave_modal(&mut self.state);
+            }
+            (
+                ContextMenuKind::Pane {
+                    ws_idx, pane_id, ..
+                },
+                Some("Enter"),
+            ) => {
+                if let Some(runtime) = self.state.runtime_for_pane_in_workspace(
+                    &self.terminal_runtimes,
+                    ws_idx,
+                    pane_id,
+                ) {
+                    let _ = runtime.try_send_bytes(bytes::Bytes::from_static(b"\r"));
                 }
                 leave_modal(&mut self.state);
             }
@@ -2338,6 +2366,27 @@ mod tests {
         };
         assert_eq!(menu.items().first(), Some(&"Paste"));
         assert!(menu.items().contains(&"Rename pane"));
+    }
+
+    #[test]
+    fn context_menu_pane_menu_lists_enter() {
+        let app = app_with_test_workspaces(&["main"]);
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let menu = ContextMenuState {
+            kind: ContextMenuKind::Pane {
+                ws_idx: 0,
+                tab_idx: 0,
+                pane_id,
+                source_pane_id: None,
+                has_manual_label: false,
+                right_click_passthrough: false,
+            },
+            x: 0,
+            y: 0,
+            list: MenuListState::new(0),
+        };
+        assert!(menu.items().contains(&"Enter"));
+        assert_eq!(menu.items()[1], "Enter");
     }
 
     #[test]
