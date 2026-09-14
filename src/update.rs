@@ -22,8 +22,14 @@ use std::time::{Duration, Instant};
 use interprocess::local_socket::traits::Stream as _;
 use serde::{Deserialize, Deserializer};
 
-const STABLE_UPDATE_MANIFEST_URL: &str = "https://herdr.dev/latest.json";
-const PREVIEW_UPDATE_MANIFEST_URL: &str = "https://herdr.dev/preview.json";
+// Fork builds fetch their own release manifest so `herdr update` installs fork
+// builds instead of upstream releases. Published by
+// `herdr-wheel-switch/tools/publish_fork_update.py`; one document carries both
+// the stable and the preview manifest schema.
+const STABLE_UPDATE_MANIFEST_URL: &str =
+    "https://github.com/qiansekai/herdr/releases/download/fork-update/latest.json";
+const PREVIEW_UPDATE_MANIFEST_URL: &str =
+    "https://github.com/qiansekai/herdr/releases/download/fork-update/latest.json";
 const HOMEBREW_FORMULA_API_URL: &str = "https://formulae.brew.sh/api/formula/herdr.json";
 const HERDR_UPDATE_COMMAND: &str = "herdr update";
 const HOMEBREW_UPDATE_COMMAND: &str = "brew update && brew upgrade herdr";
