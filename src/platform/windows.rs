@@ -2064,7 +2064,59 @@ pub fn write_clipboard(bytes: &[u8]) -> bool {
 }
 
 pub fn read_clipboard_text() -> Option<String> {
+    const MAX_CLIPBOARD_TEXT_BYTES: usize = 1024 * 1024;
+
+    // A null owner is valid and avoids failing when the process has no console
+    // window; retry because another process may hold the clipboard briefly.
+    for attempt in 0..10 {
+        if unsafe { OpenClipboard(null_mut()) } != 0 {
+            let _clipboard = ClipboardGuard;
+            let handle = unsafe { GetClipboardData(CF_UNICODETEXT as u32) };
+            if handle.is_null() {
+                return None;
+            }
+            let locked = unsafe { GlobalLock(handle) };
+            if locked.is_null() {
+                return None;
+            }
+            let size = unsafe { GlobalSize(handle) } as usize;
+            if size < 2 {
+                unsafe {
+                    GlobalUnlock(handle);
+                }
+                return None;
+            }
+            let word_count = (size / 2).min(MAX_CLIPBOARD_TEXT_BYTES / 2);
+            let words = unsafe { std::slice::from_raw_parts(locked.cast::<u16>(), word_count) };
+            let len = words
+                .iter()
+                .position(|&code_unit| code_unit == 0)
+                .unwrap_or(word_count);
+            let text = String::from_utf16(&words[..len]).ok();
+            unsafe {
+                GlobalUnlock(handle);
+            }
+            return text.filter(|text| !text.is_empty());
+        }
+        if attempt < 9 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
     None
+}
+
+/// Open a directory in the system file manager.
+///
+/// `explorer.exe` is used instead of `ShellExecuteW` because the latter opens
+/// the window without focusing it when called from a background process.
+pub fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    Ok(())
 }
 
 pub fn open_url(url: &str) -> std::io::Result<Option<std::process::Child>> {

@@ -475,16 +475,44 @@ impl Default for SpacesSidebarConfig {
     }
 }
 
+/// Wheel behavior over the sidebar lists.
+///
+/// `switch` (default) cycles focus across agents or workspaces, matching the
+/// tab bar wheel. `scroll` keeps the original behavior of scrolling list
+/// contents, or moving the highlight when the list has no scrollbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub enum SidebarWheelConfig {
+    #[default]
+    #[serde(rename = "switch")]
+    Switch,
+    #[serde(rename = "scroll")]
+    Scroll,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SidebarConfig {
     pub agents: AgentsSidebarConfig,
     pub spaces: SpacesSidebarConfig,
+    pub wheel: SidebarWheelConfig,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidebar_wheel_defaults_to_switch() {
+        assert_eq!(SidebarConfig::default().wheel, SidebarWheelConfig::Switch);
+    }
+
+    #[test]
+    fn sidebar_wheel_parses_switch_and_scroll() {
+        let switch: SidebarConfig = toml::from_str("wheel = 'switch'").expect("switch config");
+        assert_eq!(switch.wheel, SidebarWheelConfig::Switch);
+        let scroll: SidebarConfig = toml::from_str("wheel = 'scroll'").expect("scroll config");
+        assert_eq!(scroll.wheel, SidebarWheelConfig::Scroll);
+    }
 
     #[test]
     fn defaults_match_the_compact_agent_and_existing_space_layouts() {

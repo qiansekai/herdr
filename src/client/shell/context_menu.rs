@@ -6,14 +6,17 @@ impl ClientContextMenuOverlay {
 
         let item = |label, action| ClientContextMenuItem { label, action };
         match &self.target {
-            ClientContextMenuTarget::Workspace { is_git: false, .. } => {
-                vec![item("Rename", Action::Rename), item("Close", Action::Close)]
-            }
+            ClientContextMenuTarget::Workspace { is_git: false, .. } => vec![
+                item("Open folder", Action::OpenFolder),
+                item("Rename", Action::Rename),
+                item("Close", Action::Close),
+            ],
             ClientContextMenuTarget::Workspace {
                 is_linked_worktree: false,
                 has_worktree_children: false,
                 ..
             } => vec![
+                item("Open folder", Action::OpenFolder),
                 item("Rename", Action::Rename),
                 item("Close", Action::Close),
                 item("New worktree", Action::NewWorktree),
@@ -23,6 +26,7 @@ impl ClientContextMenuOverlay {
                 is_linked_worktree: true,
                 ..
             } => vec![
+                item("Open folder", Action::OpenFolder),
                 item("Rename", Action::Rename),
                 item("Close", Action::Close),
                 item("Delete worktree checkout...", Action::RemoveWorktree),
@@ -32,6 +36,7 @@ impl ClientContextMenuOverlay {
                 collapsed,
                 ..
             } => vec![
+                item("Open folder", Action::OpenFolder),
                 item("Rename", Action::Rename),
                 item("Close group", Action::Close),
                 item("New worktree", Action::NewWorktree),
@@ -52,7 +57,11 @@ impl ClientContextMenuOverlay {
                 right_click_passthrough,
                 ..
             } => {
-                let mut items = vec![item("Rename pane", Action::RenamePane)];
+                let mut items = vec![
+                    item("Paste", Action::Paste),
+                    item("Enter", Action::Enter),
+                    item("Rename pane", Action::RenamePane),
+                ];
                 if *has_manual_label {
                     items.push(item("Clear pane name", Action::ClearPaneName));
                 }
@@ -217,6 +226,41 @@ impl ClientShellState {
         outcome.repaint = true;
     }
 
+    /// Queue clipboard text as a bracketed paste for one pane, so multi-line
+    /// pastes reach the pane through the same path as the keyboard shortcut.
+    pub(super) fn paste_text_into_pane(
+        &self,
+        pane_id: String,
+        text: String,
+        outcome: &mut ClientShellInput,
+    ) {
+        super::push_target_event(
+            ClientInputTarget::Pane(pane_id),
+            crate::protocol::ClientPaneInputEvent::Paste(text),
+            outcome,
+        );
+    }
+
+    /// Directory a workspace opens in the system file manager: the focused
+    /// pane's cwd, falling back to the active tab's first pane.
+    fn workspace_directory(&self, workspace_id: &str) -> Option<String> {
+        let snapshot = self.snapshot.as_deref()?;
+        let workspace = snapshot
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.workspace_id == workspace_id)?;
+        snapshot
+            .panes
+            .iter()
+            .find(|pane| pane.workspace_id == workspace_id && pane.focused)
+            .or_else(|| {
+                snapshot.panes.iter().find(|pane| {
+                    pane.workspace_id == workspace_id && pane.tab_id == workspace.active_tab_id
+                })
+            })
+            .and_then(|pane| pane.foreground_cwd.clone().or_else(|| pane.cwd.clone()))
+    }
+
     fn activate_workspace_context_action(
         &mut self,
         workspace_id: String,
@@ -226,6 +270,13 @@ impl ClientShellState {
         use crate::input::KeybindAction;
 
         match action {
+            ClientContextMenuAction::OpenFolder => {
+                if let Some(cwd) = self.workspace_directory(&workspace_id) {
+                    if let Err(err) = crate::platform::open_directory(std::path::Path::new(&cwd)) {
+                        tracing::warn!(err = %err, ?cwd, "failed to open workspace folder");
+                    }
+                }
+            }
             ClientContextMenuAction::Rename => {
                 let label = self
                     .snapshot
@@ -377,11 +428,24 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) {
         use crate::api::schema::{
-            Method, PaneInputSetParams, PaneRenameParams, PaneRightClickTarget, PaneSplitParams,
-            PaneSwapParams, PaneTarget, PaneZoomMode, PaneZoomParams, SplitDirection,
+            Method, PaneInputSetParams, PaneRenameParams, PaneRightClickTarget, PaneSendKeysParams,
+            PaneSplitParams, PaneSwapParams, PaneTarget, PaneZoomMode, PaneZoomParams,
+            SplitDirection,
         };
 
         match action {
+            ClientContextMenuAction::Paste => {
+                if let Some(text) = crate::platform::read_clipboard_text() {
+                    self.paste_text_into_pane(pane_id, text, outcome);
+                }
+            }
+            ClientContextMenuAction::Enter => self.push_endpoint_method(
+                Method::PaneSendKeys(PaneSendKeysParams {
+                    pane_id,
+                    keys: vec!["enter".to_string()],
+                }),
+                outcome,
+            ),
             ClientContextMenuAction::RenamePane => {
                 let label = self.snapshot.as_deref().and_then(|snapshot| {
                     snapshot

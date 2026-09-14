@@ -539,6 +539,9 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
         Some("pane_2")
     );
     let body = state.hits.agent_body;
+    // This assertion covers list scrolling. Wheel focus switching has its own
+    // coverage in `sidebar_wheel`.
+    state.config.sidebar_wheel = crate::config::SidebarWheelConfig::Scroll;
     state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
         kind: MouseEventKind::ScrollDown,
         column: body.x,

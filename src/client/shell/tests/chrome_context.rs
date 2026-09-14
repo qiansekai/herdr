@@ -98,6 +98,9 @@ fn client_owned_sidebar_dividers_resize_live() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
     state.set_pane_surface(surface());
+    // This test covers divider dragging and scrollbar-free scrolling. Wheel
+    // focus switching has its own coverage in `sidebar_wheel`.
+    state.config.sidebar_wheel = crate::config::SidebarWheelConfig::Scroll;
     state.compose(106, 30).expect("expanded sidebar");
     assert!(state.hits.machines.is_empty());
     let workspace_body = state.hits.workspace_body;
@@ -226,8 +229,12 @@ fn context_menus_capture_stable_targets_and_route_actions() {
     assert!(workspace_items
         .iter()
         .any(|item| item.action == ClientContextMenuAction::NewWorktree));
+    let rename_index = workspace_items
+        .iter()
+        .position(|item| item.action == ClientContextMenuAction::Rename)
+        .expect("rename item");
     state.compose(106, 20).expect("workspace context menu");
-    let rename = state.hits.context_menu_rows[0].0;
+    let rename = state.hits.context_menu_rows[rename_index].0;
     state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: rename.x + 1,

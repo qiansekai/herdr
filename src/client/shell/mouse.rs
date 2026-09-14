@@ -1846,6 +1846,44 @@ impl ClientShellState {
                     outcome,
                 );
             }
+            MouseEventKind::ScrollUp
+                if super::contains(self.hits.agent_body, point)
+                    && self.config.sidebar_wheel == crate::config::SidebarWheelConfig::Switch =>
+            {
+                self.record_binding(
+                    crate::input::KeybindMatch::Action(crate::input::KeybindAction::PreviousAgent),
+                    outcome,
+                );
+            }
+            MouseEventKind::ScrollDown
+                if super::contains(self.hits.agent_body, point)
+                    && self.config.sidebar_wheel == crate::config::SidebarWheelConfig::Switch =>
+            {
+                self.record_binding(
+                    crate::input::KeybindMatch::Action(crate::input::KeybindAction::NextAgent),
+                    outcome,
+                );
+            }
+            MouseEventKind::ScrollUp
+                if super::contains(self.hits.workspace_body, point)
+                    && self.config.sidebar_wheel == crate::config::SidebarWheelConfig::Switch =>
+            {
+                self.record_binding(
+                    crate::input::KeybindMatch::Action(
+                        crate::input::KeybindAction::PreviousWorkspace,
+                    ),
+                    outcome,
+                );
+            }
+            MouseEventKind::ScrollDown
+                if super::contains(self.hits.workspace_body, point)
+                    && self.config.sidebar_wheel == crate::config::SidebarWheelConfig::Switch =>
+            {
+                self.record_binding(
+                    crate::input::KeybindMatch::Action(crate::input::KeybindAction::NextWorkspace),
+                    outcome,
+                );
+            }
             MouseEventKind::ScrollUp if super::contains(self.hits.agent_body, point) => {
                 let next = self.agent_scroll.saturating_sub(1);
                 if next != self.agent_scroll {
