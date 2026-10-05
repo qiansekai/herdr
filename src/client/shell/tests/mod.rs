@@ -248,6 +248,8 @@ fn surface_with_popup() -> PaneSurfaceFrame {
 mod agents_worktrees_notifications;
 mod chrome_context;
 mod close_tab;
+
+mod context_menu_actions;
 mod copy;
 mod endpoint_requests;
 mod endpoints;
@@ -259,4 +261,5 @@ mod link_hover;
 mod mobile;
 mod mouse_selection;
 mod popup_focus_projection;
+mod sidebar_wheel;
 mod startup_overlays;
