@@ -100,6 +100,7 @@ fn workspace_context_menu_open_folder_ignores_unknown_workspace() {
             is_git: false,
             is_linked_worktree: false,
             has_worktree_children: false,
+            close_group: false,
             collapsed: false,
         },
         x: 0,

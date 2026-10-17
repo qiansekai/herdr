@@ -161,10 +161,19 @@ fn encode_placement_update(
         {
             return None;
         }
-        if cache.images.contains_key(&host_id) {
-            encode_delete_image(&mut bytes, host_id);
-            cache.placements.retain(|(id, _), _| *id != host_id);
-            cache.replayed_placements.retain(|(id, _)| *id != host_id);
+        if let Some(previous) = cache.images.get(&host_id).copied() {
+            // Replacing the pixels of an existing id is atomic in the Kitty
+            // protocol: the upload keeps the placement, so there is no blank
+            // frame while a delete and the new image travel separately.
+            // Only a geometry or format change needs the placement rebuilt.
+            let same_geometry = previous.image_width == image_signature.image_width
+                && previous.image_height == image_signature.image_height
+                && previous.format_code == image_signature.format_code;
+            if !same_geometry {
+                encode_delete_image(&mut bytes, host_id);
+                cache.placements.retain(|(id, _), _| *id != host_id);
+                cache.replayed_placements.retain(|(id, _)| *id != host_id);
+            }
         }
         if let Some(data) = &placement.raw_data {
             output.push_bytes(std::mem::take(&mut bytes));

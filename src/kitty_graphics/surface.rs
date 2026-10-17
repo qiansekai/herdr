@@ -441,14 +441,21 @@ impl ClientState {
             .map(|p| &p.asset)
             .chain(next.retained_assets.iter())
             .collect::<HashSet<_>>();
+        // Compare host image ids, not asset keys: a terminal image keeps its
+        // id across pixel updates, and deleting it would blank the frame
+        // between the upload and the new placement.
+        let desired_ids = desired
+            .iter()
+            .map(|key| self.image_id(key))
+            .collect::<HashSet<_>>();
         let stale = self
             .display_scene
             .placements
             .iter()
             .map(|p| &p.asset)
             .chain(self.display_scene.retained_assets.iter())
-            .filter(|key| !desired.contains(key))
             .map(|key| self.image_id(key))
+            .filter(|image_id| !desired_ids.contains(image_id))
             .collect::<Vec<_>>();
         self.stale_images.extend(stale);
         let owned = self
@@ -1226,7 +1233,12 @@ mod tests {
             let display = bytes.find("a=p,").unwrap();
             assert!(upload < display);
             if revision > 1 {
-                assert!(bytes.find("a=d,d=I,").unwrap() < upload);
+                // Same id, same geometry: the upload replaces the pixels in
+                // place, so no delete is needed and no blank frame shows.
+                assert!(
+                    !bytes.contains("a=d,d=I,"),
+                    "same-geometry update must not delete first: {bytes:?}"
+                );
             }
             assert_eq!(state.host.images.len(), 1);
         }
