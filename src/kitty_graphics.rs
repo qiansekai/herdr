@@ -61,6 +61,22 @@ enum HostSourceKey {
     },
 }
 
+/// Slot bit distinguishing the two host ids used to double buffer terminal
+/// images. Kept clear of the direct/native id namespaces.
+const TERMINAL_SLOT_BIT: u32 = 1 << 30;
+
+/// True when the placement comes from a terminal image inside a pane, which is
+/// the source that updates its pixels in place every frame.
+fn is_terminal_source(key: &HostSourceKey) -> bool {
+    match key {
+        HostSourceKey::Terminal { .. } => true,
+        HostSourceKey::ClientSurface { source, .. } => matches!(
+            source,
+            crate::protocol::SurfaceGraphicsSource::Terminal { .. }
+        ),
+    }
+}
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 struct ImageSignature {
     image_width: u32,
@@ -106,6 +122,9 @@ pub(crate) struct HostGraphicsCache {
     placements: HashMap<(u32, u32), PlacementSignature>,
     /// Host image currently backing each (pane, source image id) pair.
     sources: HashMap<HostSourceKey, u32>,
+    /// Active host id for terminal images. Terminal pixels are double buffered
+    /// across two ids so an update never blanks the frame on the host.
+    terminal_active: HashMap<HostSourceKey, u32>,
     replay_placements: bool,
     replayed_placements: HashSet<(u32, u32)>,
 }
@@ -131,26 +150,38 @@ fn encode_placement_update(
     placement: &HostPlacement,
 ) -> Option<GraphicsOutput> {
     let (clipped, format_code) = clipped_placement(placement)?;
-    let host_id = placement
+    let base_id = placement
         .host_image_id
         .unwrap_or_else(|| host_image_id(placement.pane_id, &placement.placement));
+    let is_terminal = is_terminal_source(&placement.source_key);
+    let active_id = if is_terminal {
+        cache
+            .terminal_active
+            .get(&placement.source_key)
+            .copied()
+            .unwrap_or(base_id)
+    } else {
+        base_id
+    };
     let placement_id = host_placement_id(&placement.source_key, &placement.placement);
-    let key = (host_id, placement_id);
+    let key = (active_id, placement_id);
     let image_signature = image_signature(placement, format_code);
     let placement_signature =
         placement_signature(clipped, placement.placement.z, placement.scrollback_offset);
-    let image_current = cache.images.get(&host_id) == Some(&image_signature);
+    let image_current = cache.images.get(&active_id) == Some(&image_signature);
     let placement_current = cache.placements.get(&key) == Some(&placement_signature)
         && (!cache.replay_placements || cache.replayed_placements.contains(&key));
     if image_current
         && placement_current
-        && cache.sources.get(&placement.source_key) == Some(&host_id)
+        && cache.sources.get(&placement.source_key) == Some(&active_id)
     {
         return None;
     }
 
     let mut bytes = Vec::new();
     let mut output = GraphicsOutput::default();
+    let mut target_id = active_id;
+    let mut retire: Option<u32> = None;
     if !image_current {
         // Bail out before touching the cache so a pending upload keeps the old image.
         if placement
@@ -161,7 +192,13 @@ fn encode_placement_update(
         {
             return None;
         }
-        if let Some(previous) = cache.images.get(&host_id).copied() {
+        if is_terminal && cache.images.contains_key(&active_id) {
+            // Double buffering: upload under the other slot id while the active
+            // image is still on screen, then retire the old id after the new
+            // placement is displayed. No frame goes blank in between.
+            target_id = active_id ^ TERMINAL_SLOT_BIT;
+            retire = Some(active_id);
+        } else if let Some(previous) = cache.images.get(&active_id).copied() {
             // Replacing the pixels of an existing id is atomic in the Kitty
             // protocol: the upload keeps the placement, so there is no blank
             // frame while a delete and the new image travel separately.
@@ -170,37 +207,62 @@ fn encode_placement_update(
                 && previous.image_height == image_signature.image_height
                 && previous.format_code == image_signature.format_code;
             if !same_geometry {
-                encode_delete_image(&mut bytes, host_id);
-                cache.placements.retain(|(id, _), _| *id != host_id);
-                cache.replayed_placements.retain(|(id, _)| *id != host_id);
+                encode_delete_image(&mut bytes, active_id);
+                cache.placements.retain(|(id, _), _| *id != active_id);
+                cache.replayed_placements.retain(|(id, _)| *id != active_id);
             }
         }
         if let Some(data) = &placement.raw_data {
             output.push_bytes(std::mem::take(&mut bytes));
             output.operations.push(GraphicsOperation::Upload {
-                control: upload_control(placement, format_code, host_id),
+                control: upload_control(placement, format_code, target_id),
                 data: Arc::clone(data),
             });
         } else {
-            let control = upload_control(placement, format_code, host_id);
+            let control = upload_control(placement, format_code, target_id);
             encode_kitty_data(&mut bytes, &control, &placement.placement.data);
         }
-        cache.images.insert(host_id, image_signature);
+        cache.images.insert(target_id, image_signature);
+        if is_terminal {
+            cache
+                .terminal_active
+                .insert(placement.source_key.clone(), target_id);
+        }
     }
 
-    release_superseded_source_image(&mut bytes, cache, placement.source_key.clone(), host_id);
-    if !placement_current {
+    if is_terminal {
+        cache
+            .sources
+            .insert(placement.source_key.clone(), target_id);
+    } else {
+        release_superseded_source_image(
+            &mut bytes,
+            cache,
+            placement.source_key.clone(),
+            target_id,
+        );
+    }
+    let target_key = (target_id, placement_id);
+    let target_current = target_id == active_id && placement_current;
+    if !target_current {
         encode_display_placement(
             &mut bytes,
             clipped,
-            host_id,
+            target_id,
             placement_id,
             placement.placement.z,
         );
     }
-    cache.placements.insert(key, placement_signature);
+    cache.placements.insert(target_key, placement_signature);
     if cache.replay_placements {
-        cache.replayed_placements.insert(key);
+        cache.replayed_placements.insert(target_key);
+    }
+    if let Some(old) = retire {
+        // The replacement is displayed; dropping the previous id is invisible.
+        encode_delete_image(&mut bytes, old);
+        cache.images.remove(&old);
+        cache.placements.retain(|(id, _), _| *id != old);
+        cache.replayed_placements.retain(|(id, _)| *id != old);
     }
     output.push_bytes(bytes);
     Some(output)
@@ -237,9 +299,18 @@ fn encode_graphics_output(
         .iter()
         .filter_map(|placement| {
             clipped_placement(placement).map(|_| {
-                let host_id = placement
+                let base_id = placement
                     .host_image_id
                     .unwrap_or_else(|| host_image_id(placement.pane_id, &placement.placement));
+                let host_id = if is_terminal_source(&placement.source_key) {
+                    cache
+                        .terminal_active
+                        .get(&placement.source_key)
+                        .copied()
+                        .unwrap_or(base_id)
+                } else {
+                    base_id
+                };
                 (
                     host_id,
                     host_placement_id(&placement.source_key, &placement.placement),

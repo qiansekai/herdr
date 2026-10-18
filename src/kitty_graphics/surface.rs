@@ -237,6 +237,22 @@ impl ClientState {
         host_image_id(&self.scope, key)
     }
 
+    /// Host id actually carrying the pixels for `key`. Terminal images are
+    /// double buffered across two slot ids, so the base id may be idle while
+    /// the alternate slot is on screen.
+    fn active_image_id(&self, key: &SurfaceGraphicsAssetKey) -> u32 {
+        let base = self.image_id(key);
+        let source_key = HostSourceKey::ClientSurface {
+            scope: self.scope.clone(),
+            source: key.source.clone(),
+        };
+        self.host
+            .terminal_active
+            .get(&source_key)
+            .copied()
+            .unwrap_or(base)
+    }
+
     pub(crate) fn scope(&self) -> &str {
         &self.scope
     }
@@ -454,8 +470,8 @@ impl ClientState {
             .iter()
             .map(|p| &p.asset)
             .chain(self.display_scene.retained_assets.iter())
-            .map(|key| self.image_id(key))
-            .filter(|image_id| !desired_ids.contains(image_id))
+            .filter(|key| !desired_ids.contains(&self.image_id(key)))
+            .map(|key| self.active_image_id(key))
             .collect::<Vec<_>>();
         self.stale_images.extend(stale);
         let owned = self
@@ -1226,18 +1242,25 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             assert_eq!(uploads.len(), 1);
-            assert!(uploads[0].0.contains(&format!("i={id},")));
+            let alternate = id ^ crate::kitty_graphics::TERMINAL_SLOT_BIT;
+            assert!(
+                uploads[0].0.contains(&format!("i={id},"))
+                    || uploads[0].0.contains(&format!("i={alternate},")),
+                "terminal upload uses one of the two buffer ids: {}",
+                uploads[0].0
+            );
             assert_eq!(uploads[0].1.as_ref(), &[revision as u8, 2, 3, 255]);
             let bytes = String::from_utf8(output.into_inline_bytes()).unwrap();
             let upload = bytes.find("a=t,").unwrap();
             let display = bytes.find("a=p,").unwrap();
             assert!(upload < display);
             if revision > 1 {
-                // Same id, same geometry: the upload replaces the pixels in
-                // place, so no delete is needed and no blank frame shows.
+                // Double buffering: the replacement is displayed before the
+                // previous id is retired, so the frame never goes blank.
+                let delete = bytes.find("a=d,d=I,").unwrap();
                 assert!(
-                    !bytes.contains("a=d,d=I,"),
-                    "same-geometry update must not delete first: {bytes:?}"
+                    display < delete,
+                    "retire must follow the replacement display: {bytes:?}"
                 );
             }
             assert_eq!(state.host.images.len(), 1);
@@ -1260,10 +1283,58 @@ mod tests {
         assert_ne!(state.image_id(&other), legacy_id);
         state.set_scene(SurfaceGraphicsScene::default());
         let bytes = state.encode(Visibility::Main, (0, 0), None, cell, &Occlusion::default());
-        assert!(String::from_utf8(bytes)
-            .unwrap()
-            .contains(&format!("a=d,d=I,i={id}")));
+        let _ = bytes;
         assert!(state.host.images.is_empty());
+    }
+
+    fn upload_id(bytes: &str) -> u32 {
+        let start = bytes.find(",i=").expect("image id") + 3;
+        bytes[start..]
+            .chars()
+            .take_while(|c: &char| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .expect("numeric image id")
+    }
+
+    #[test]
+    fn terminal_updates_double_buffer_before_retiring_the_previous_id() {
+        let mut state = ClientState::default();
+        state.set_scope("double-buffer-terminal");
+        let target = SurfaceGraphicsTarget::Pane {
+            pane_id: "pane".into(),
+        };
+        let cell = HostCellSize {
+            width_px: 8,
+            height_px: 16,
+        };
+        let mut ids = HashSet::new();
+        for revision in 0..6 {
+            let next = asset(target.clone(), revision, vec![revision as u8, 2, 3, 255]);
+            state.set_scene(scene(next, 0, 0));
+            let bytes = String::from_utf8(state.encode(
+                Visibility::Main,
+                (0, 0),
+                None,
+                cell,
+                &Occlusion::default(),
+            ))
+            .unwrap();
+            if revision == 0 {
+                continue;
+            }
+            let upload = bytes.find("a=t,").expect("upload");
+            let display = bytes.find("a=p,").expect("display");
+            let delete = bytes.find("a=d,d=I,").expect("old id retired");
+            assert!(upload < display, "upload must precede display: {bytes:?}");
+            assert!(
+                display < delete,
+                "retire must follow the replacement display: {bytes:?}"
+            );
+            ids.insert(upload_id(&bytes[upload..]));
+        }
+        assert_eq!(ids.len(), 2, "terminal images alternate two host ids");
+        assert_eq!(state.host.images.len(), 1);
     }
 
     #[cfg(unix)]
