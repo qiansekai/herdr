@@ -235,12 +235,7 @@ fn encode_placement_update(
             .sources
             .insert(placement.source_key.clone(), target_id);
     } else {
-        release_superseded_source_image(
-            &mut bytes,
-            cache,
-            placement.source_key.clone(),
-            target_id,
-        );
+        release_superseded_source_image(&mut bytes, cache, placement.source_key.clone(), target_id);
     }
     let target_key = (target_id, placement_id);
     let target_current = target_id == active_id && placement_current;
